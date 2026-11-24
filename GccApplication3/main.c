@@ -92,9 +92,7 @@ void iniciarTimer(void)
 // =====================================================
 // TIMER2 - INTERRUPCION PARA CONTROLAR LA DURACION DEL BUZZER
 // =====================================================
-// Timer2 genera una interrupcion cada 1 ms. Mientras el buzzer
-// esta encendido, la interrupcion reduce su tiempo restante.
-// Asi beep() y beepError() no necesitan detener el programa.
+
 
 ISR(TIMER2_COMPA_vect)
 {
@@ -262,9 +260,6 @@ char leerTecla(void)
 // ENTRADA MIXTA: TECLADO MATRICIAL Y CONSOLA UART
 // =====================================================
 
-// Devuelve una tecla de cualquiera de las dos interfaces.
-// UART_read() ya es no bloqueante: devuelve 0 si no hay datos.
-// En el teclado se aplica antirrebote y se espera la liberacion.
 char leerEntradaMixta(void)
 {
     char tecla;
@@ -533,8 +528,7 @@ void borrarRanking(void)
     }
 }
 
-// Despues de consultar el ranking, C regresa al menu y B solicita borrarlo.
-// Las dos opciones se aceptan desde teclado matricial o consola serial.
+
 void opcionesRankingLCD(void)
 {
     char tecla;
@@ -788,7 +782,6 @@ void consultarRankingSeleccionado(void)
     UART_string("C = regresar al menu principal.\r\n");
     UART_string("B = solicitar borrado del ranking.\r\n");
     UART_string("Para confirmar el borrado, presiona #. Para cancelar, presiona C.\r\n");
-    UART_string("Puedes escribir estas teclas en la consola o usar el teclado matricial.\r\n");
 
     opcionesRankingLCD();
 }
