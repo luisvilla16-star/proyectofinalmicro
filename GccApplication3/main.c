@@ -216,6 +216,54 @@ char leerTecla(void)
 
 
 // =====================================================
+// ENTRADA MIXTA: TECLADO MATRICIAL Y CONSOLA UART
+// =====================================================
+
+// Devuelve una tecla de cualquiera de las dos interfaces.
+// UART_read() ya es no bloqueante: devuelve 0 si no hay datos.
+// En el teclado se aplica antirrebote y se espera la liberacion.
+char leerEntradaMixta(void)
+{
+    char tecla;
+
+    while (1)
+    {
+        // Primero revisar si llego un caracter desde la consola.
+        tecla = UART_read();
+
+        if (tecla != 0)
+        {
+            // Ignorar Enter y otros caracteres de control.
+            if (tecla == '\r' || tecla == '\n')
+                continue;
+
+            // Aceptar letras minusculas tambien.
+            if (tecla >= 'a' && tecla <= 'z')
+                tecla = tecla - 'a' + 'A';
+
+            return tecla;
+        }
+
+        // Si no hay datos UART, revisar el teclado matricial.
+        tecla = buscarTecla();
+
+        if (tecla != 0)
+        {
+            esperarTiempo(25);
+
+            if (buscarTecla() == tecla)
+            {
+                while (buscarTecla() != 0)
+                    esperarTiempo(5);
+
+                esperarTiempo(20);
+                return tecla;
+            }
+        }
+    }
+}
+
+// =====================================================
 // BUZZER
 // =====================================================
 
@@ -250,6 +298,17 @@ void mostrarNumero(uint16_t numero)
     lcd_write_word(texto);
 }
 
+// Muestra la respuesta en las columnas 2 a 5 de la segunda linea.
+// Primero limpia el campo para evitar que queden digitos anteriores.
+void mostrarRespuestaLCD(uint16_t numero)
+{
+    lcd_goto_xy(1, 2);
+    lcd_write_word("    ");
+
+    lcd_goto_xy(1, 2);
+    mostrarNumero(numero);
+}
+
 void enviarNumero(uint16_t numero)
 {
     char texto[6];
@@ -267,7 +326,7 @@ void prepararLineaJuego(void)
 {
     lcd_goto_xy(1, 0);
 
-    lcd_write_word("R:    T:00:00");
+    lcd_write_word("R:     T:00:00");
 }
 
 void actualizarContador(uint32_t inicio)
@@ -333,12 +392,14 @@ char leerTeclaJuego(uint32_t inicio)
             {
                 while (buscarTecla() != 0)
                 {
-                    if (tiempoActual() - ultimaActualizacion >= 100)
-                    {
-                        actualizarContador(inicio);
+	                if (tiempoActual() - ultimaActualizacion >= 100)
+	                {
+		                actualizarContador(inicio);
 
-                        ultimaActualizacion = tiempoActual();
-                    }
+		                ultimaActualizacion = tiempoActual();
+	                }
+
+	                _delay_ms(1);
                 }
 
                 return tecla;
@@ -363,6 +424,39 @@ void iniciarEEPROM(void)
         }
 
         EEPROM_update(100, 0xA5);
+    }
+}
+
+// =====================================================
+// OPCIONES DESPUES DE CONSULTAR EL RANKING
+// =====================================================
+
+// La unica opcion disponible es regresar al menu principal con C.
+// Se acepta la tecla C desde el teclado matricial o desde la consola.
+void opcionesRankingLCD(void)
+{
+    char tecla;
+
+    lcd_clear();
+    lcd_goto_xy(0, 0);
+    lcd_write_word("C: Regresar");
+    lcd_goto_xy(1, 0);
+    lcd_write_word("Menu principal");
+
+    UART_string("\r\nPresiona C para regresar al menu principal.\r\n");
+    UART_string("Puedes usar el teclado matricial o la consola serial.\r\n");
+
+    while (1)
+    {
+        tecla = leerEntradaMixta();
+
+        if (tecla == 'C')
+        {
+            UART_string("\r\nRegresando al menu principal...\r\n");
+            break;
+        }
+
+        UART_string("Opcion no valida. Presiona C para regresar.\r\n");
     }
 }
 
@@ -584,15 +678,11 @@ void consultarRankingSeleccionado(void)
 
     UART_string("==============================\r\n");
 
-    lcd_clear();
+    UART_string("\r\nEl ranking se muestra en esta consola.\r\n");
+    UART_string("C = regresar al menu principal.\r\n");
+    UART_string("Puedes escribir estas teclas en la consola o usar el teclado matricial.\r\n");
 
-    lcd_goto_xy(0, 0);
-    lcd_write_word("Ranking enviado");
-
-    lcd_goto_xy(1, 0);
-    lcd_write_word("Ver terminal");
-
-    esperarTiempo(2000);
+    opcionesRankingLCD();
 }
 
 // =====================================================
@@ -736,9 +826,7 @@ uint16_t leerRespuestaJuego(uint32_t inicio)
 
                 posicion++;
 
-                lcd_goto_xy(1, 2);
-
-                mostrarNumero(numero);
+                mostrarRespuestaLCD(numero);
             }
         }
 
@@ -749,7 +837,7 @@ uint16_t leerRespuestaJuego(uint32_t inicio)
             posicion = 0;
 
             lcd_goto_xy(1, 0);
-            lcd_write_word("R:    T:00:00");
+            lcd_write_word("R:     T:00:00");
 
             actualizarContador(inicio);
         }
@@ -813,7 +901,7 @@ void juegoSecuencia(void)
         UART_string("Respuesta incorrecta. Intenta nuevamente.\r\n");
 
         lcd_goto_xy(1, 0);
-        lcd_write_word("R:    T:00:00");
+        lcd_write_word("R:     T:00:00");
 
         actualizarContador(inicio);
     }
@@ -997,9 +1085,7 @@ uint16_t leerRespuestaCalculadora(uint32_t inicio)
 
                 posicion++;
 
-                lcd_goto_xy(1, 2);
-
-                mostrarNumero(numero);
+                mostrarRespuestaLCD(numero);
             }
         }
 
@@ -1010,7 +1096,7 @@ uint16_t leerRespuestaCalculadora(uint32_t inicio)
             posicion = 0;
 
             lcd_goto_xy(1, 0);
-            lcd_write_word("R:    T:00:00");
+            lcd_write_word("R:     T:00:00");
 
             actualizarContador(inicio);
         }
@@ -1080,7 +1166,7 @@ void juegoCalculadora(void)
                 UART_string("Respuesta incorrecta. Intenta nuevamente.\r\n");
 
                 lcd_goto_xy(1, 0);
-                lcd_write_word("R:    T:00:00");
+                lcd_write_word("R:     T:00:00");
 
                 actualizarContador(inicio);
             }
@@ -1129,10 +1215,10 @@ void mostrarMenu(void)
     lcd_clear();
 
     lcd_goto_xy(0, 0);
-    lcd_write_word("1 Secuencias");
+    lcd_write_word("1:Sec 2:Calc");
 
     lcd_goto_xy(1, 0);
-    lcd_write_word("2 Calculadora");
+    lcd_write_word("A: Ver ranking");
 }
 
 // =====================================================
@@ -1233,5 +1319,6 @@ int main(void)
 
             consultarRankingSeleccionado();
         }
+
     }
 }

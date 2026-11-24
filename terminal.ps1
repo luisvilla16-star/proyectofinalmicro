@@ -1,4 +1,4 @@
-# Terminal serie para jugar Road Rocks con el teclado de la PC.
+# Terminal serie para jugar PATTERNIX con el teclado de la PC.
 # Manda cada tecla EN CUANTO SE OPRIME, sin Enter, y muestra lo que contesta la tarjeta.
 #
 #   Lo mas facil: doble clic en jugar.bat
@@ -10,7 +10,7 @@
 # Es el mismo puerto serie que usa cualquier terminal: 9600 baudios, 8 bits de datos,
 # sin paridad y 1 bit de parada. Salir: Esc.
 param([string]$Puerto = '', [switch]$Prueba, [switch]$Eco)
-
+$Host.UI.RawUI.WindowTitle = "PATTERNIX"
 if ($Eco) {
     Write-Host 'Modo eco (sin tarjeta): oprime teclas, sin Enter. Esc sale.' -ForegroundColor Green
     while ($true) {
@@ -67,9 +67,6 @@ try {
     }
 
     Write-Host "Conectado a ${Puerto}: 9600 baudios, 8 bits, sin paridad, 1 bit de parada." -ForegroundColor Green
-    Write-Host 'S inicia   W sube   X baja   P pausa   R ranking   B borra el ranking   Esc sale' -ForegroundColor Green
-    Write-Host 'Cada tecla se manda al oprimirla: NO hace falta Enter.' -ForegroundColor Green
-    Write-Host 'La tarjeta se reinicia al conectar: en un par de segundos manda su menu.' -ForegroundColor DarkGray
     while ($true) {
         if ($sp.BytesToRead -gt 0) { [Console]::Write($sp.ReadExisting()) }
         if ([Console]::KeyAvailable) {
