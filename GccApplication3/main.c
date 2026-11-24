@@ -12,7 +12,8 @@
  * Teclado: PD2-PD7 y PB1-PB2
  *
  * Timer1: interrupcion cada 1 ms
- * UART: interrupcion de recepcion
+ * Timer2: interrupcion para controlar la duracion del buzzer
+ * UART: interrupcion de recepcion (definida en UART.h)
  */
 
 #define F_CPU 16000000UL
@@ -38,6 +39,7 @@
 // =====================================================
 
 volatile uint32_t milis = 0;
+volatile uint16_t duracionBuzzerMs = 0;
 
 uint8_t dificultad = 1;
 uint8_t juego = 0;
@@ -85,6 +87,47 @@ void iniciarTimer(void)
              (1 << CS10);
 
     TIMSK1 |= (1 << OCIE1A);
+}
+
+// =====================================================
+// TIMER2 - INTERRUPCION PARA CONTROLAR LA DURACION DEL BUZZER
+// =====================================================
+// Timer2 genera una interrupcion cada 1 ms. Mientras el buzzer
+// esta encendido, la interrupcion reduce su tiempo restante.
+// Asi beep() y beepError() no necesitan detener el programa.
+
+ISR(TIMER2_COMPA_vect)
+{
+    if (duracionBuzzerMs > 0)
+    {
+        duracionBuzzerMs--;
+
+        if (duracionBuzzerMs == 0)
+        {
+            PORTB &= ~(1 << BUZZER);
+            TIMSK2 &= ~(1 << OCIE2A);
+        }
+    }
+    else
+    {
+        PORTB &= ~(1 << BUZZER);
+        TIMSK2 &= ~(1 << OCIE2A);
+    }
+}
+
+void iniciarTimer2(void)
+{
+    TCCR2A = 0;
+    TCCR2B = 0;
+    TCNT2 = 0;
+
+    // Modo CTC: 16 MHz / 64 / (249 + 1) = 1000 Hz.
+    OCR2A = 249;
+    TCCR2A |= (1 << WGM21);
+    TCCR2B |= (1 << CS22);
+
+    // La interrupcion se habilita solamente durante un sonido.
+    TIMSK2 &= ~(1 << OCIE2A);
 }
 
 void esperarTiempo(uint32_t duracion)
@@ -269,20 +312,24 @@ char leerEntradaMixta(void)
 
 void beep(void)
 {
-	PORTB |= (1 << BUZZER);
-
-	esperarTiempo(80);
-
-	PORTB &= ~(1 << BUZZER);
+    // Encender el buzzer durante 80 ms sin bloquear el programa.
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+        duracionBuzzerMs = 80;
+        PORTB |= (1 << BUZZER);
+        TIMSK2 |= (1 << OCIE2A);
+    }
 }
 
 void beepError(void)
 {
-	PORTB |= (1 << BUZZER);
-
-	esperarTiempo(200);
-
-	PORTB &= ~(1 << BUZZER);
+    // Encender el buzzer durante 200 ms sin bloquear el programa.
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+        duracionBuzzerMs = 200;
+        PORTB |= (1 << BUZZER);
+        TIMSK2 |= (1 << OCIE2A);
+    }
 }
 
 // =====================================================
@@ -428,26 +475,78 @@ void iniciarEEPROM(void)
 }
 
 // =====================================================
-// OPCIONES DESPUES DE CONSULTAR EL RANKING
+// BORRAR RANKING EEPROM
 // =====================================================
 
-// La unica opcion disponible es regresar al menu principal con C.
-// Se acepta la tecla C desde el teclado matricial o desde la consola.
-void opcionesRankingLCD(void)
+void borrarRanking(void)
 {
+    uint8_t i;
     char tecla;
 
     lcd_clear();
     lcd_goto_xy(0, 0);
-    lcd_write_word("C: Regresar");
-    lcd_goto_xy(1, 0);
-    lcd_write_word("Menu principal");
+    lcd_write_word("Borrar ranking?");
 
-    UART_string("\r\nPresiona C para regresar al menu principal.\r\n");
-    UART_string("Puedes usar el teclado matricial o la consola serial.\r\n");
+    lcd_goto_xy(1, 0);
+    lcd_write_word("#=Si  C=No");
+
+    UART_string("\r\n===== CONFIRMAR BORRADO =====\r\n");
+    UART_string("Presiona # para borrar el ranking.\r\n");
+    UART_string("Presiona C para cancelar.\r\n");
+
+    tecla = leerEntradaMixta();
+
+    if (tecla == '#')
+    {
+        // Los seis rankings ocupan 60 bytes de EEPROM.
+        for (i = 0; i < 60; i++)
+            EEPROM_update(i, 0xFF);
+
+        beep();
+
+        UART_string("\r\nRanking borrado correctamente.\r\n");
+
+        lcd_clear();
+        lcd_goto_xy(0, 0);
+        lcd_write_word("Ranking borrado");
+
+        lcd_goto_xy(1, 0);
+        lcd_write_word("Registros vacios");
+
+        esperarTiempo(1800);
+    }
+    else if (tecla == 'C')
+    {
+        UART_string("\r\nBorrado cancelado.\r\n");
+
+        lcd_clear();
+        lcd_goto_xy(0, 0);
+        lcd_write_word("Operacion");
+        lcd_goto_xy(1, 0);
+        lcd_write_word("cancelada");
+
+        esperarTiempo(1200);
+    }
+    else
+    {
+        UART_string("\r\nOpcion no valida. No se borro el ranking.\r\n");
+    }
+}
+
+// Despues de consultar el ranking, C regresa al menu y B solicita borrarlo.
+// Las dos opciones se aceptan desde teclado matricial o consola serial.
+void opcionesRankingLCD(void)
+{
+    char tecla;
 
     while (1)
     {
+        lcd_clear();
+        lcd_goto_xy(0, 0);
+        lcd_write_word("C:Menu B:Borrar");
+        lcd_goto_xy(1, 0);
+        lcd_write_word("Teclado o PC");
+
         tecla = leerEntradaMixta();
 
         if (tecla == 'C')
@@ -455,8 +554,15 @@ void opcionesRankingLCD(void)
             UART_string("\r\nRegresando al menu principal...\r\n");
             break;
         }
-
-        UART_string("Opcion no valida. Presiona C para regresar.\r\n");
+        else if (tecla == 'B')
+        {
+            UART_string("\r\nSolicitud para borrar ranking recibida.\r\n");
+            borrarRanking();
+        }
+        else
+        {
+            UART_string("\r\nOpcion no valida. Usa C o B.\r\n");
+        }
     }
 }
 
@@ -680,6 +786,8 @@ void consultarRankingSeleccionado(void)
 
     UART_string("\r\nEl ranking se muestra en esta consola.\r\n");
     UART_string("C = regresar al menu principal.\r\n");
+    UART_string("B = solicitar borrado del ranking.\r\n");
+    UART_string("Para confirmar el borrado, presiona #. Para cancelar, presiona C.\r\n");
     UART_string("Puedes escribir estas teclas en la consola o usar el teclado matricial.\r\n");
 
     opcionesRankingLCD();
@@ -1218,7 +1326,7 @@ void mostrarMenu(void)
     lcd_write_word("1:Sec 2:Calc");
 
     lcd_goto_xy(1, 0);
-    lcd_write_word("A: Ver ranking");
+    lcd_write_word("A:Rank B:Borrar");
 }
 
 // =====================================================
@@ -1272,9 +1380,13 @@ int main(void)
 
     iniciarEEPROM();
 
-    // Timer1
+    // Timer1: contador de tiempo del juego cada 1 ms.
 
     iniciarTimer();
+
+    // Timer2: controla la duracion del buzzer mediante interrupcion.
+
+    iniciarTimer2();
 
     // Activar interrupciones
 
@@ -1320,5 +1432,11 @@ int main(void)
             consultarRankingSeleccionado();
         }
 
+        else if (tecla == 'B')
+        {
+            beep();
+
+            borrarRanking();
+        }
     }
 }
